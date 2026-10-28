@@ -1,9 +1,3 @@
-import os
-from dotenv import load_dotenv
-
-load_dotenv()
-
-BOT_TOKEN = os.getenv("9213274251:AAGFdvkc8T0ImzUQ38aFUm0tVAg_2GYo-0E")
 """ЛГУвинчик — Telegram-бот знакомств студентов (pyTelegramBotAPI).
 
 Установка в терминале PyCharm:
@@ -63,6 +57,8 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 logger = logging.getLogger("LGUvinchik")
 
 GENDERS = {"male": "Парень", "female": "Девушка", "unspecified": "Не указывать"}
+# Старое значение оставлено только для совместимости с уже сохранёнными анкетами.
+SELECTABLE_GENDERS = {"male", "female"}
 LOOKING = {"male": "Парней", "female": "Девушек", "all": "Всех"}
 FACULTIES = (
     "Факультет специального (дефектологического) образования",
@@ -759,8 +755,7 @@ def menu_navigation(*actions):
 
 
 def gender_buttons(prefix="register_gender"):
-    return inline_buttons(prefix, [("👨 Парень", "male"), ("👩 Девушка", "female"),
-                                   ("Не указывать", "unspecified")])
+    return inline_buttons(prefix, [("👨 Парень", "male"), ("👩 Девушка", "female")])
 
 
 def looking_buttons(prefix="register_looking"):
@@ -774,7 +769,7 @@ def profile_text(u, own=False):
             f"Пол: {GENDERS.get(u['gender'], 'Не указан')}\n"
             f"🎓 Факультет: {escape(u['faculty'] or '')}\n"
             f"📚 Курс: {u['course']}\n\n"
-            f"💬 {escape(u['bio'] or '')}")
+            f"💬 {escape(u['bio'] or 'О себе пока ничего не написано')}")
     if own:
         text += (f"\n\n🔎 Ищу: {LOOKING.get(u['preferred_gender'], 'Всех')}"
                  f"\nСтатус: {'✅ активна' if u['is_visible'] else '⛔ отключена'}")
@@ -898,7 +893,14 @@ def ask_registration(chat_id, uid):
             "bio": "Расскажи о себе (до 500 символов).",
             "photo_file_id": "📷 Пришли фотографию для анкеты обычным фото Telegram (не файлом).",
         }
-        bot.send_message(chat_id, prompts[step])
+        if step == "bio":
+            # Описание необязательно: пустая строка обозначает осознанный пропуск.
+            kb = types.InlineKeyboardMarkup(row_width=1)
+            kb.add(icon_button("Пропустить", "registration:skip_bio", ICONS["back"]))
+            bot.send_message(chat_id, prompts[step] + "\n\nМожно пропустить этот шаг.",
+                             reply_markup=kb)
+        else:
+            bot.send_message(chat_id, prompts[step])
 
 
 # ────────────────────── ПОИСК И ЛАЙКИ ──────────────────────
@@ -1631,7 +1633,7 @@ def callbacks(call):
 
     if data.startswith("register_gender:") and missing_field(u) == "gender":
         gender = data.split(":", 1)[1]
-        if gender in GENDERS:
+        if gender in SELECTABLE_GENDERS:
             set_fields(uid, gender=gender)
             bot.answer_callback_query(call.id, "Сохранено")
             clear_old_buttons(call)
@@ -1655,6 +1657,13 @@ def callbacks(call):
             clear_old_buttons(call)
             ask_registration(chat_id, uid)
             return
+
+    if data == "registration:skip_bio" and missing_field(u) == "bio":
+        set_fields(uid, bio="")
+        bot.answer_callback_query(call.id, "Описание пропущено")
+        clear_old_buttons(call)
+        ask_registration(chat_id, uid)
+        return
 
     if not ready(u):
         bot.answer_callback_query(call.id, "Сначала заверши регистрацию", show_alert=True)
@@ -1790,7 +1799,7 @@ def callbacks(call):
 
     if data.startswith("edit_gender:") and u["edit_field"] == "gender":
         choice = data.partition(":")[2]
-        if choice in GENDERS:
+        if choice in SELECTABLE_GENDERS:
             set_fields(uid, gender=choice, edit_field=None)
             bot.answer_callback_query(call.id, "Сохранено")
             clear_old_buttons(call)
